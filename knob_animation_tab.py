@@ -430,9 +430,19 @@ class KnobAnimationTab(QWidget):
         else:
             new_end = self.end_angle + 360
         
-        # Update end angle via wheel (will trigger update)
+        # Update end angle via wheel
         self.end_angle = new_end
         self.end_wheel.setAngle(new_end, emit=False)
+        
+        # Recalculate current angle based on slider position and apply immediately
+        t = self.preview_slider.value() / 100.0
+        self.current_angle = self.start_angle + t * (self.end_angle - self.start_angle)
+        self.current_angle_label.setText(f"Current: {self.current_angle:.0f}°")
+        
+        # Apply rotation to show the change immediately
+        if self.knob_item is not None:
+            self._apply_rotation(self.current_angle)
+        
         self.update_visual_guides()
 
     def on_preview_slider_changed(self, value: int) -> None:
