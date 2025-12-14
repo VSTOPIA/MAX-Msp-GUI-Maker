@@ -10,6 +10,12 @@ A comprehensive Python toolkit for creating UI assets for MAX/MSP and other audi
 
 ## Features
 
+### 💾 Project Save/Load
+- **Save and load projects** as `.guiproj` files
+- Preserves all settings: knob images, rotation, shapes, colors, effects
+- **Keyboard shortcuts**: Cmd+N (New), Cmd+O (Open), Cmd+S (Save), Cmd+Shift+S (Save As)
+- JSON-based format for easy inspection and editing
+
 ### 🎨 Background Removal & Component Splitting
 - Remove solid black backgrounds with adjustable threshold
 - Automatically split images into separate components using connected components analysis
@@ -28,21 +34,29 @@ A comprehensive Python toolkit for creating UI assets for MAX/MSP and other audi
 
 ### 🎛️ Knob Animation
 - Load knob images and define rotation center
-- Set start and end angles by clicking on a visual guide circle
-- **+180° flip buttons** for quick alignment adjustments
+- **3 Draggable angle wheels** for intuitive calibration:
+  - Pointer (blue) - where the knob pointer is in the original image
+  - Start (green) - rotation start limit
+  - End (red) - rotation end limit
 - **Reverse direction** button to switch between inside/outside arc rotation
 - Preview rotation with real-time slider
+- **Integrated Shape Tools** - add overlays directly on knobs:
+  - Rectangle, Circle, Line shapes with neon effects
+  - Shapes can rotate with knob or stay static
+  - All shape properties (colors, glow, stroke width)
 - Export spritesheets with:
   - Configurable frame count
   - Horizontal, Vertical, or Grid layout
   - Custom grid columns
-- **7 Sample knobs included:**
+- **7 High-resolution sample knobs** (256×256, anti-aliased):
   - Metallic, Neon Cyan, Neon Magenta, Neon Green
-  - Simple, Cyberpunk, Metallic Large
+  - Simple, Cyberpunk, Metallic Large (512×512)
 
 ### ✨ Shape Editor
 - Create shapes: **Rectangles, Circles, Lines, Dots**
 - Interactive resize handles on corners and edges
+- **Shift+Drag for proportional resize** (maintains aspect ratio)
+- **Delete/Backspace key** to delete selected shapes
 - **Neon glow effects** with full control:
   - Glow radius (up to 999px)
   - Glow intensity (0-200%)
@@ -118,6 +132,12 @@ python gui.py
 
 ## Usage
 
+### Project Management
+- **File → New Project** (Cmd+N) - Start fresh
+- **File → Open Project...** (Cmd+O) - Load a `.guiproj` file
+- **File → Save Project** (Cmd+S) - Save current project
+- **File → Save Project As...** (Cmd+Shift+S) - Save to new file
+
 ### Background Removal Tab
 1. Click **Load image…** and select your PNG
 2. Adjust **Background threshold** (higher = more aggressive removal)
@@ -136,14 +156,19 @@ python gui.py
 
 ### Knob Animation Tab
 1. Select a sample knob or **Load knob image…**
-2. Use **Click mode** to set:
-   - Rotation center (red dot)
-   - Start angle (green line)
-   - End angle (red line)
-3. Use **+180° buttons** to flip angles if misaligned
+2. Click **📍 Set rotation center** button, then click on canvas
+   - Or use **Ctrl+Click** anytime to set center
+3. **Drag the 3 wheel controls** to set angles:
+   - **Pointer (blue)** - where the knob pointer points in the source image
+   - **Start (green)** - minimum rotation angle
+   - **End (red)** - maximum rotation angle
 4. Use **↻ Reverse direction** to change rotation path
 5. Preview with the slider
-6. Export spritesheet
+6. **Add shape overlays** (optional):
+   - Click ▢ ○ ╱ buttons to add shapes
+   - Adjust colors and glow effects
+   - Toggle "Shapes rotate with knob"
+7. Export spritesheet
 
 ### Shape Editor Tab
 1. **Load base image** (optional)
@@ -153,9 +178,28 @@ python gui.py
    - Stroke width and opacity
    - Fill opacity
    - Neon glow settings
-4. Use **Stroke/Fill color** buttons for gradients
-5. Organize with the **Layers panel**
-6. **Export overlay** to save your creation
+4. **Shift+Drag** corners/edges for proportional resize
+5. Use **Stroke/Fill color** buttons for gradients
+6. Organize with the **Layers panel**
+7. **Export overlay** to save your creation
+
+---
+
+## Keyboard Shortcuts
+
+| Shortcut | Action |
+|----------|--------|
+| Cmd+N | New Project |
+| Cmd+O | Open Project |
+| Cmd+S | Save Project |
+| Cmd+Shift+S | Save Project As |
+| Cmd+Z | Undo |
+| Shift+Cmd+Z | Redo |
+| Delete/Backspace | Delete selected shape |
+| Arrow keys | Nudge shape 1px |
+| Shift+Arrow | Nudge shape 10px |
+| Ctrl+Click | Set rotation center (Knob tab) |
+| Shift+Drag | Proportional resize |
 
 ---
 
@@ -210,20 +254,24 @@ The script creates an `output` folder containing:
 
 ## Sample Knobs
 
-Generate sample knobs for testing:
+Generate high-resolution anti-aliased sample knobs for testing:
 
 ```bash
 python create_sample_knob.py
 ```
 
 Creates 7 knob styles in `output/sample_knobs/`:
-- `knob_metallic.png` - Classic 3D metal
-- `knob_neon_cyan.png` - Glowing cyan
-- `knob_neon_magenta.png` - Glowing magenta
-- `knob_neon_green.png` - Glowing green
-- `knob_simple.png` - Flat minimal
-- `knob_cyberpunk.png` - Neon lines with cyan pointer
-- `knob_metallic_large.png` - 200px metal knob
+| Knob | Size | Description |
+|------|------|-------------|
+| `knob_metallic.png` | 256×256 | Classic 3D metal |
+| `knob_neon_cyan.png` | 256×256 | Glowing cyan |
+| `knob_neon_magenta.png` | 256×256 | Glowing magenta |
+| `knob_neon_green.png` | 256×256 | Glowing green |
+| `knob_simple.png` | 256×256 | Flat minimal |
+| `knob_cyberpunk.png` | 256×256 | Neon lines with cyan pointer |
+| `knob_metallic_large.png` | 512×512 | Large metal knob |
+
+*All knobs use 2× supersampling + LANCZOS downscaling for smooth anti-aliased edges.*
 
 ---
 
@@ -241,6 +289,7 @@ MAX-Msp-GUI-Maker/
 ├── run_gui.sh              # macOS/Linux launcher
 ├── run_gui.cmd             # Windows launcher
 ├── requirements.txt        # Python dependencies
+├── *.guiproj               # Project save files
 └── output/                 # Generated files
     └── sample_knobs/       # Sample knob images
 ```
@@ -250,7 +299,6 @@ MAX-Msp-GUI-Maker/
 ## Roadmap
 
 ### Planned Features
-- [ ] **Preset system** - Save and load shape/effect presets
 - [ ] **SVG export** - Vector export for shapes
 - [ ] **Animation timeline** - More complex multi-step animations
 - [ ] **Batch processing** - Process multiple images at once
