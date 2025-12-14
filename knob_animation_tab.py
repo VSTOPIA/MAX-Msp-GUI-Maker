@@ -43,6 +43,12 @@ class AngleWheelWidget(QWidget):
     
     angleChanged = pyqtSignal(float)
     
+    # Layout constants
+    LABEL_HEIGHT = 16
+    WHEEL_RADIUS = 26
+    VALUE_HEIGHT = 16
+    PADDING = 4
+    
     def __init__(self, label: str, color: QColor, initial_angle: float = 0, parent=None):
         super().__init__(parent)
         self._label = label
@@ -50,8 +56,14 @@ class AngleWheelWidget(QWidget):
         self._angle = initial_angle
         self._dragging = False
         
-        self.setFixedSize(70, 90)
+        # Calculate widget size based on layout
+        wheel_diameter = self.WHEEL_RADIUS * 2
+        total_height = self.LABEL_HEIGHT + self.PADDING + wheel_diameter + self.PADDING + self.VALUE_HEIGHT
+        self.setFixedSize(max(70, wheel_diameter + 10), total_height)
         self.setMouseTracking(True)
+        
+        # Wheel center Y position
+        self._wheel_cy = self.LABEL_HEIGHT + self.PADDING + self.WHEEL_RADIUS
     
     def angle(self) -> float:
         return self._angle
@@ -67,12 +79,13 @@ class AngleWheelWidget(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
         w, h = self.width(), self.height()
-        radius = 28
-        cx, cy = w // 2, 38
+        radius = self.WHEEL_RADIUS
+        cx = w // 2
+        cy = self._wheel_cy
         
-        # Draw label
+        # Draw label at top
         painter.setPen(QColor("#cccccc"))
-        painter.drawText(QRectF(0, 0, w, 18), Qt.AlignmentFlag.AlignCenter, self._label)
+        painter.drawText(QRectF(0, 0, w, self.LABEL_HEIGHT), Qt.AlignmentFlag.AlignCenter, self._label)
         
         # Draw outer ring (dark)
         painter.setPen(QPen(QColor("#333333"), 2))
@@ -112,9 +125,10 @@ class AngleWheelWidget(QWidget):
         painter.setPen(Qt.PenStyle.NoPen)
         painter.drawEllipse(QPointF(cx, cy), 4, 4)
         
-        # Draw angle value
+        # Draw angle value at bottom
         painter.setPen(QColor("#aaaaaa"))
-        painter.drawText(QRectF(0, h - 18, w, 18), Qt.AlignmentFlag.AlignCenter, f"{self._angle:.0f}°")
+        painter.drawText(QRectF(0, h - self.VALUE_HEIGHT, w, self.VALUE_HEIGHT), 
+                        Qt.AlignmentFlag.AlignCenter, f"{self._angle:.0f}°")
     
     def mousePressEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
@@ -129,7 +143,8 @@ class AngleWheelWidget(QWidget):
         self._dragging = False
     
     def _update_angle_from_pos(self, pos) -> None:
-        cx, cy = self.width() // 2, 38
+        cx = self.width() // 2
+        cy = self._wheel_cy
         dx = pos.x() - cx
         dy = pos.y() - cy
         angle = math.degrees(math.atan2(dy, dx))
