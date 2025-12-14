@@ -9,6 +9,7 @@ This is the main window that hosts all tabs:
 
 import sys
 import math
+import json
 from pathlib import Path
 
 from PyQt6.QtCore import Qt, QRectF, QPointF, QLineF
@@ -22,6 +23,7 @@ from PyQt6.QtGui import (
     QLinearGradient,
     QKeySequence,
     QUndoStack,
+    QAction,
 )
 from PyQt6.QtWidgets import (
     QApplication,
@@ -50,6 +52,7 @@ from PyQt6.QtWidgets import (
     QMessageBox,
     QAbstractItemView,
     QColorDialog,
+    QMenuBar,
 )
 
 # Import tab modules
@@ -110,9 +113,42 @@ class MainWindow(QMainWindow):
 
         # Undo/redo stack for all editing actions
         self.undo_stack = QUndoStack(self)
+        
+        # Current project file path
+        self.project_path: Path | None = None
 
         self._build_ui()
+        self._setup_menu_bar()
         self._setup_undo_actions()
+
+    def _setup_menu_bar(self) -> None:
+        """Create the application menu bar."""
+        menu_bar = self.menuBar()
+        
+        # File menu
+        file_menu = menu_bar.addMenu("&File")
+        
+        new_action = QAction("&New Project", self)
+        new_action.setShortcut(QKeySequence.StandardKey.New)
+        new_action.triggered.connect(self.on_new_project)
+        file_menu.addAction(new_action)
+        
+        open_action = QAction("&Open Project...", self)
+        open_action.setShortcut(QKeySequence.StandardKey.Open)
+        open_action.triggered.connect(self.on_open_project)
+        file_menu.addAction(open_action)
+        
+        file_menu.addSeparator()
+        
+        save_action = QAction("&Save Project", self)
+        save_action.setShortcut(QKeySequence.StandardKey.Save)
+        save_action.triggered.connect(self.on_save_project)
+        file_menu.addAction(save_action)
+        
+        save_as_action = QAction("Save Project &As...", self)
+        save_as_action.setShortcut(QKeySequence("Ctrl+Shift+S"))
+        save_as_action.triggered.connect(self.on_save_project_as)
+        file_menu.addAction(save_as_action)
 
     def _setup_undo_actions(self) -> None:
         """Create global Undo / Redo actions."""
@@ -123,6 +159,313 @@ class MainWindow(QMainWindow):
         redo_action = self.undo_stack.createRedoAction(self, "Redo")
         redo_action.setShortcut(QKeySequence.StandardKey.Redo)
         self.addAction(redo_action)
+
+    # ------------------------------------------------------------------ Project Save/Load
+
+    def on_new_project(self) -> None:
+        """Create a new empty project."""
+        reply = QMessageBox.question(
+            self,
+            "New Project",
+            "Create a new project? Unsaved changes will be lost.",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+        )
+        if reply == QMessageBox.StandardButton.Yes:
+            self.project_path = None
+            # Reset knob tab state
+            self.knob_tab.knob_path = None
+            self.knob_tab.knob_pixmap = None
+            if self.knob_tab.knob_item:
+                self.knob_tab.knob_scene.removeItem(self.knob_tab.knob_item)
+                self.knob_tab.knob_item = None
+            self.knob_tab.rotation_center = None
+            self.knob_tab.shapes.clear()
+            self.knob_tab.knob_scene.clear()
+            self.knob_tab.center_label.setText("Center: –")
+            self.knob_tab.pointer_wheel.setAngle(-135, emit=False)
+            self.knob_tab.start_wheel.setAngle(-135, emit=False)
+            self.knob_tab.end_wheel.setAngle(135, emit=False)
+            self.knob_tab.pointer_angle = -135
+            self.knob_tab.start_angle = -135
+            self.knob_tab.end_angle = 135
+            self.knob_tab.preview_slider.setValue(0)
+            self.setWindowTitle("MAX-Msp GUI Maker – New Project")
+
+    def on_open_project(self) -> None:
+        """Open a project file."""
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Open Project", "", "GUI Maker Project (*.guiproj);;All Files (*)"
+        )
+        if path:
+            self._load_project(Path(path))
+
+    def on_save_project(self) -> None:
+        """Save the current project."""
+        if self.project_path is None:
+            self.on_save_project_as()
+        else:
+            self._save_project(self.project_path)
+
+    def on_save_project_as(self) -> None:
+        """Save the project to a new file."""
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save Project", "", "GUI Maker Project (*.guiproj);;All Files (*)"
+        )
+        if path:
+            if not path.endswith(".guiproj"):
+                path += ".guiproj"
+            self._save_project(Path(path))
+
+    def _save_project(self, path: Path) -> None:
+        """Save project state to a JSON file."""
+        project = {
+            "version": 1,
+            "knob_animation": self._serialize_knob_tab(),
+        }
+        
+        try:
+            with open(path, "w") as f:
+                json.dump(project, f, indent=2)
+            self.project_path = path
+            self.setWindowTitle(f"MAX-Msp GUI Maker – {path.name}")
+            QMessageBox.information(self, "Saved", f"Project saved to {path}")
+        except Exception as e:
+            QMessageBox.warning(self, "Error", f"Failed to save project: {e}")
+
+    def _load_project(self, path: Path) -> None:
+        """Load project state from a JSON file."""
+        try:
+            with open(path, "r") as f:
+                project = json.load(f)
+            
+            version = project.get("version", 1)
+            
+            # Load knob animation tab state
+            if "knob_animation" in project:
+                self._deserialize_knob_tab(project["knob_animation"])
+            
+            self.project_path = path
+            self.setWindowTitle(f"MAX-Msp GUI Maker – {path.name}")
+            QMessageBox.information(self, "Loaded", f"Project loaded from {path}")
+        except Exception as e:
+            QMessageBox.warning(self, "Error", f"Failed to load project: {e}")
+
+    def _serialize_knob_tab(self) -> dict:
+        """Serialize knob animation tab state to a dict."""
+        tab = self.knob_tab
+        data = {
+            "knob_path": str(tab.knob_path) if tab.knob_path else None,
+            "rotation_center": {
+                "x": tab.rotation_center.x() if tab.rotation_center else 0,
+                "y": tab.rotation_center.y() if tab.rotation_center else 0,
+            } if tab.rotation_center else None,
+            "pointer_angle": tab.pointer_angle,
+            "start_angle": tab.start_angle,
+            "end_angle": tab.end_angle,
+            "guide_radius": tab.guide_radius_spin.value(),
+            "export": {
+                "frames": tab.frames_spin.value(),
+                "layout": tab.layout_combo.currentText(),
+                "grid_cols": tab.grid_cols_spin.value(),
+                "offset": tab.offset_spin.value(),
+            },
+            "shapes": self._serialize_shapes(tab.shapes),
+            "shape_settings": {
+                "stroke_color": tab.shape_stroke_color.name(),
+                "fill_color": tab.shape_fill_color.name() if tab.shape_fill_color.alpha() > 0 else None,
+                "stroke_width": tab.stroke_width_spin.value(),
+                "neon_enabled": tab.neon_checkbox.isChecked(),
+                "neon_radius": tab.neon_radius_spin.value(),
+                "neon_intensity": tab.neon_intensity_spin.value(),
+                "shapes_rotate": tab.shapes_rotate_checkbox.isChecked(),
+            },
+        }
+        return data
+
+    def _deserialize_knob_tab(self, data: dict) -> None:
+        """Restore knob animation tab state from a dict."""
+        tab = self.knob_tab
+        
+        # Clear existing state
+        tab.knob_scene.clear()
+        tab.shapes.clear()
+        tab.knob_item = None
+        tab.center_marker = None
+        tab.rotation_circle = None
+        tab.start_line = None
+        tab.end_line = None
+        tab.current_line = None
+        
+        # Load knob image
+        knob_path = data.get("knob_path")
+        if knob_path and Path(knob_path).exists():
+            tab.knob_path = Path(knob_path)
+            tab.knob_pixmap = QPixmap(str(tab.knob_path))
+            tab.knob_item = QGraphicsPixmapItem(tab.knob_pixmap)
+            tab.knob_item.setZValue(0)
+            tab.knob_scene.addItem(tab.knob_item)
+        
+        # Load rotation center
+        center_data = data.get("rotation_center")
+        if center_data:
+            tab.rotation_center = QPointF(center_data["x"], center_data["y"])
+            tab.center_label.setText(f"Center: ({center_data['x']:.0f}, {center_data['y']:.0f})")
+        else:
+            tab.rotation_center = None
+            tab.center_label.setText("Center: –")
+        
+        # Load angles
+        tab.pointer_angle = data.get("pointer_angle", -135)
+        tab.start_angle = data.get("start_angle", -135)
+        tab.end_angle = data.get("end_angle", 135)
+        tab.pointer_wheel.setAngle(tab.pointer_angle, emit=False)
+        tab.start_wheel.setAngle(tab.start_angle, emit=False)
+        tab.end_wheel.setAngle(tab.end_angle, emit=False)
+        
+        # Load guide radius
+        tab.guide_radius_spin.setValue(data.get("guide_radius", 80))
+        
+        # Load export settings
+        export = data.get("export", {})
+        tab.frames_spin.setValue(export.get("frames", 64))
+        layout_text = export.get("layout", "Horizontal")
+        idx = tab.layout_combo.findText(layout_text)
+        if idx >= 0:
+            tab.layout_combo.setCurrentIndex(idx)
+        tab.grid_cols_spin.setValue(export.get("grid_cols", 8))
+        tab.offset_spin.setValue(export.get("offset", 0))
+        
+        # Load shape settings
+        shape_settings = data.get("shape_settings", {})
+        stroke_color = shape_settings.get("stroke_color", "#00ffff")
+        tab.shape_stroke_color = QColor(stroke_color)
+        tab.stroke_color_btn.setStyleSheet(f"background-color: {stroke_color}; border: 2px solid #555;")
+        
+        fill_color = shape_settings.get("fill_color")
+        if fill_color:
+            tab.shape_fill_color = QColor(fill_color)
+            tab.fill_color_btn.setStyleSheet(f"background-color: {fill_color}; border: 2px solid #555;")
+        else:
+            tab.shape_fill_color = QColor(0, 0, 0, 0)
+            tab.fill_color_btn.setStyleSheet("background-color: transparent; border: 2px solid #555;")
+        
+        tab.stroke_width_spin.setValue(shape_settings.get("stroke_width", 3))
+        tab.neon_checkbox.setChecked(shape_settings.get("neon_enabled", True))
+        tab.neon_radius_spin.setValue(shape_settings.get("neon_radius", 15))
+        tab.neon_intensity_spin.setValue(shape_settings.get("neon_intensity", 200))
+        tab.shapes_rotate_checkbox.setChecked(shape_settings.get("shapes_rotate", True))
+        
+        # Load shapes
+        shapes_data = data.get("shapes", [])
+        self._deserialize_shapes(tab, shapes_data)
+        
+        # Refresh scene
+        tab._refresh_scene_rect()
+        tab.update_visual_guides()
+        tab.preview_slider.setValue(0)
+
+    def _serialize_shapes(self, shapes: list) -> list:
+        """Serialize shape items to a list of dicts."""
+        result = []
+        for shape in shapes:
+            if not shape.isVisible():
+                continue
+            
+            shape_data = {
+                "pen_color": shape.pen().color().name(),
+                "pen_width": shape.pen().width(),
+            }
+            
+            if isinstance(shape, ResizableRectItem):
+                rect = shape.rect()
+                shape_data["type"] = "rect"
+                shape_data["x"] = rect.x()
+                shape_data["y"] = rect.y()
+                shape_data["width"] = rect.width()
+                shape_data["height"] = rect.height()
+                brush = shape.brush()
+                if brush.style() != Qt.BrushStyle.NoBrush:
+                    shape_data["fill_color"] = brush.color().name()
+            elif isinstance(shape, ResizableEllipseItem):
+                rect = shape.rect()
+                shape_data["type"] = "ellipse"
+                shape_data["x"] = rect.x()
+                shape_data["y"] = rect.y()
+                shape_data["width"] = rect.width()
+                shape_data["height"] = rect.height()
+                brush = shape.brush()
+                if brush.style() != Qt.BrushStyle.NoBrush:
+                    shape_data["fill_color"] = brush.color().name()
+            elif isinstance(shape, ResizableLineItem):
+                line = shape.line()
+                shape_data["type"] = "line"
+                shape_data["x1"] = line.x1()
+                shape_data["y1"] = line.y1()
+                shape_data["x2"] = line.x2()
+                shape_data["y2"] = line.y2()
+            
+            # Save glow effect if present
+            effect = shape.graphicsEffect()
+            if isinstance(effect, QGraphicsDropShadowEffect):
+                shape_data["glow"] = {
+                    "radius": effect.blurRadius(),
+                    "color": effect.color().name(),
+                }
+            
+            result.append(shape_data)
+        return result
+
+    def _deserialize_shapes(self, tab, shapes_data: list) -> None:
+        """Restore shapes from serialized data."""
+        for shape_data in shapes_data:
+            shape_type = shape_data.get("type")
+            
+            if shape_type == "rect":
+                shape = ResizableRectItem(
+                    shape_data["x"], shape_data["y"],
+                    shape_data["width"], shape_data["height"]
+                )
+            elif shape_type == "ellipse":
+                shape = ResizableEllipseItem(
+                    shape_data["x"], shape_data["y"],
+                    shape_data["width"], shape_data["height"]
+                )
+            elif shape_type == "line":
+                shape = ResizableLineItem(
+                    shape_data["x1"], shape_data["y1"],
+                    shape_data["x2"], shape_data["y2"]
+                )
+            else:
+                continue
+            
+            # Apply pen
+            pen = QPen(QColor(shape_data.get("pen_color", "#00ffff")))
+            pen.setWidth(shape_data.get("pen_width", 3))
+            shape.setPen(pen)
+            
+            # Apply brush
+            fill_color = shape_data.get("fill_color")
+            if fill_color and shape_type != "line":
+                shape.setBrush(QBrush(QColor(fill_color)))
+            else:
+                shape.setBrush(QBrush(Qt.GlobalColor.transparent))
+            
+            # Apply glow effect
+            glow_data = shape_data.get("glow")
+            if glow_data:
+                effect = QGraphicsDropShadowEffect()
+                effect.setBlurRadius(glow_data["radius"])
+                effect.setColor(QColor(glow_data["color"]))
+                effect.setOffset(0, 0)
+                shape.setGraphicsEffect(effect)
+            
+            # Configure shape
+            shape.setZValue(50)
+            shape.setFlag(shape.GraphicsItemFlag.ItemIsSelectable, True)
+            shape.setFlag(shape.GraphicsItemFlag.ItemIsMovable, True)
+            
+            tab.knob_scene.addItem(shape)
+            tab.shapes.append(shape)
 
     def _build_ui(self) -> None:
         tabs = QTabWidget(self)
