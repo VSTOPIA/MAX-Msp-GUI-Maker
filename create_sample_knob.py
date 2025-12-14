@@ -325,40 +325,40 @@ def main():
     # Create different knob styles
     print("Creating sample knobs...")
     
-    # Metallic knob
-    metallic = create_metallic_knob(size=128, pointer_angle=-135)
+    # Metallic knob (256px for good quality)
+    metallic = create_metallic_knob(size=256, pointer_angle=-135)
     metallic.save(samples_dir / "knob_metallic.png")
-    print(f"  ✓ Saved: {samples_dir / 'knob_metallic.png'}")
+    print(f"  ✓ Saved: {samples_dir / 'knob_metallic.png'} (256x256)")
     
     # Neon cyan knob
-    neon_cyan = create_neon_knob(size=128, pointer_angle=-135, color=(0, 229, 255))
+    neon_cyan = create_neon_knob(size=256, pointer_angle=-135, color=(0, 229, 255))
     neon_cyan.save(samples_dir / "knob_neon_cyan.png")
-    print(f"  ✓ Saved: {samples_dir / 'knob_neon_cyan.png'}")
+    print(f"  ✓ Saved: {samples_dir / 'knob_neon_cyan.png'} (256x256)")
     
     # Neon magenta knob
-    neon_magenta = create_neon_knob(size=128, pointer_angle=-135, color=(255, 0, 128))
+    neon_magenta = create_neon_knob(size=256, pointer_angle=-135, color=(255, 0, 128))
     neon_magenta.save(samples_dir / "knob_neon_magenta.png")
-    print(f"  ✓ Saved: {samples_dir / 'knob_neon_magenta.png'}")
+    print(f"  ✓ Saved: {samples_dir / 'knob_neon_magenta.png'} (256x256)")
     
     # Neon green knob
-    neon_green = create_neon_knob(size=128, pointer_angle=-135, color=(0, 255, 100))
+    neon_green = create_neon_knob(size=256, pointer_angle=-135, color=(0, 255, 100))
     neon_green.save(samples_dir / "knob_neon_green.png")
-    print(f"  ✓ Saved: {samples_dir / 'knob_neon_green.png'}")
+    print(f"  ✓ Saved: {samples_dir / 'knob_neon_green.png'} (256x256)")
     
     # Simple knob
-    simple = create_simple_knob(size=128, pointer_angle=-135)
+    simple = create_simple_knob(size=256, pointer_angle=-135)
     simple.save(samples_dir / "knob_simple.png")
-    print(f"  ✓ Saved: {samples_dir / 'knob_simple.png'}")
+    print(f"  ✓ Saved: {samples_dir / 'knob_simple.png'} (256x256)")
     
     # Cyberpunk knob - neon lines with cyan pointer
-    cyberpunk = create_cyberpunk_knob(size=128, pointer_angle=-135)
+    cyberpunk = create_cyberpunk_knob(size=256, pointer_angle=-135)
     cyberpunk.save(samples_dir / "knob_cyberpunk.png")
-    print(f"  ✓ Saved: {samples_dir / 'knob_cyberpunk.png'}")
+    print(f"  ✓ Saved: {samples_dir / 'knob_cyberpunk.png'} (256x256)")
     
-    # Larger metallic knob
-    metallic_large = create_metallic_knob(size=200, pointer_angle=-135)
+    # Larger metallic knob (512px for high resolution)
+    metallic_large = create_metallic_knob(size=512, pointer_angle=-135)
     metallic_large.save(samples_dir / "knob_metallic_large.png")
-    print(f"  ✓ Saved: {samples_dir / 'knob_metallic_large.png'}")
+    print(f"  ✓ Saved: {samples_dir / 'knob_metallic_large.png'} (512x512)")
     
     print(f"\nAll sample knobs saved to: {samples_dir}")
     print("\nYou can load these in the 'Knob animation' tab to test rotation and spritesheet export!")
