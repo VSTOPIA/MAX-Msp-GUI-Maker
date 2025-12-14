@@ -161,15 +161,50 @@ python gui.py
 
 ## CLI Usage
 
-For batch processing without the GUI:
+The `process_fader_image.py` script provides command-line image processing:
 
+### What it does:
+1. Load the source PNG
+2. Remove the black background (pixels darker than threshold become transparent)
+3. Use the alpha channel to detect separate components
+4. Export:
+   - One **background-removed image** (`<name>_no_bg.png`)
+   - Multiple **component images** (`component_1.png`, `component_2.png`, …)
+
+### Basic usage:
+
+**macOS / Linux:**
 ```bash
+source .venv/bin/activate
 python process_fader_image.py \
   --input "your_image.png" \
   --output-dir "output" \
   --threshold 10 \
   --min-area 2000
 ```
+
+**Windows (CMD):**
+```cmd
+.venv\Scripts\activate.bat
+python process_fader_image.py ^
+  --input "your_image.png" ^
+  --output-dir "output" ^
+  --threshold 10 ^
+  --min-area 2000
+```
+
+### Arguments:
+| Argument | Description | Default |
+|----------|-------------|---------|
+| `--input` | Path to source PNG image | Required |
+| `--output-dir` | Directory for output files | `output` |
+| `--threshold` | Black removal threshold (0-255) | `10` |
+| `--min-area` | Minimum component area in pixels | `2000` |
+
+### Output:
+The script creates an `output` folder containing:
+- `<original_name>_no_bg.png` – Background removed version
+- `component_1.png`, `component_2.png`, … – Individual pieces (e.g., fader track and knob)
 
 ---
 
