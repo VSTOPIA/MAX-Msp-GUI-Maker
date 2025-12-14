@@ -4,12 +4,13 @@ Knob Animation Tab - Contains UI and logic for:
 - Setting rotation center point
 - Defining start/end rotation angles
 - Previewing knob rotation
+- Shape editing with neon effects
 - Exporting rotation spritesheets
 """
 
 import math
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, List
 
 from PyQt6.QtCore import Qt, QRectF, QPointF, pyqtSignal
 from PyQt6.QtGui import QPixmap, QPen, QColor, QBrush, QPainter, QTransform, QConicalGradient
@@ -30,9 +31,20 @@ from PyQt6.QtWidgets import (
     QWidget,
     QComboBox,
     QFileDialog,
+    QColorDialog,
+    QGraphicsDropShadowEffect,
+    QCheckBox,
+    QScrollArea,
 )
 
 from PIL import Image
+
+# Import shape classes from shape editor
+from shape_editor_tab import (
+    ResizableRectItem,
+    ResizableEllipseItem,
+    ResizableLineItem,
+)
 
 if TYPE_CHECKING:
     from gui import MainWindow
@@ -152,16 +164,29 @@ class AngleWheelWidget(QWidget):
 
 
 class KnobView(QGraphicsView):
-    """Custom QGraphicsView for knob animation - click to set rotation center."""
+    """Custom QGraphicsView for knob animation with shape editing support."""
 
     def __init__(self, scene: QGraphicsScene, owner: "KnobAnimationTab") -> None:
         super().__init__(scene)
         self._owner = owner
+        self._set_center_mode = False  # When True, clicks set rotation center
+        self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
+
+    def set_center_mode(self, enabled: bool) -> None:
+        """Toggle between shape selection mode and set-center mode."""
+        self._set_center_mode = enabled
 
     def mousePressEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
-            scene_pos = self.mapToScene(event.pos())
-            self._owner.set_rotation_center(scene_pos)
+            # Check if we clicked on an item
+            item = self.itemAt(event.pos())
+            
+            # If in center mode or clicked on empty space with Ctrl held, set center
+            if self._set_center_mode or (item is None and event.modifiers() & Qt.KeyboardModifier.ControlModifier):
+                scene_pos = self.mapToScene(event.pos())
+                self._owner.set_rotation_center(scene_pos)
+                return
+        
         super().mousePressEvent(event)
 
 
@@ -190,6 +215,14 @@ class KnobAnimationTab(QWidget):
         self.start_line: QGraphicsLineItem | None = None
         self.end_line: QGraphicsLineItem | None = None
         self.current_line: QGraphicsLineItem | None = None
+        
+        # Shape editing state
+        self.shapes: List = []  # List of shape items added to the knob
+        self.shape_stroke_color: QColor = QColor("#00ffff")
+        self.shape_fill_color: QColor = QColor(0, 0, 0, 0)  # Transparent
+        self.neon_enabled: bool = True
+        self.neon_radius: int = 15
+        self.neon_intensity: int = 200
         
         self._build_ui()
 
@@ -254,8 +287,15 @@ class KnobAnimationTab(QWidget):
 
         controls_layout.addSpacing(8)
 
+        # Rotation center button
+        self.set_center_btn = QPushButton("📍 Set rotation center (Ctrl+Click)")
+        self.set_center_btn.setCheckable(True)
+        self.set_center_btn.setToolTip("When active, clicking on canvas sets the rotation center point")
+        self.set_center_btn.toggled.connect(self.on_set_center_mode_toggled)
+        controls_layout.addWidget(self.set_center_btn)
+
         # Rotation info labels
-        self.center_label = QLabel("Center: – (click on canvas to set)")
+        self.center_label = QLabel("Center: –")
         self.current_angle_label = QLabel("Current: -135°")
         controls_layout.addWidget(self.center_label)
         controls_layout.addWidget(self.current_angle_label)
@@ -274,6 +314,109 @@ class KnobAnimationTab(QWidget):
         settings_layout.addRow("Guide radius (px)", self.guide_radius_spin)
 
         controls_layout.addWidget(settings_group)
+
+        controls_layout.addSpacing(8)
+
+        # ============== SHAPE TOOLS ==============
+        shape_group = QGroupBox("Shape Tools (overlay effects)")
+        shape_group.setCheckable(True)
+        shape_group.setChecked(True)
+        shape_layout = QVBoxLayout(shape_group)
+
+        # Shape creation buttons
+        shape_btns_layout = QHBoxLayout()
+        
+        add_rect_btn = QPushButton("▢")
+        add_rect_btn.setToolTip("Add rectangle")
+        add_rect_btn.setFixedSize(32, 32)
+        add_rect_btn.clicked.connect(self.on_add_rect)
+        shape_btns_layout.addWidget(add_rect_btn)
+        
+        add_circle_btn = QPushButton("○")
+        add_circle_btn.setToolTip("Add circle")
+        add_circle_btn.setFixedSize(32, 32)
+        add_circle_btn.clicked.connect(self.on_add_circle)
+        shape_btns_layout.addWidget(add_circle_btn)
+        
+        add_line_btn = QPushButton("╱")
+        add_line_btn.setToolTip("Add line")
+        add_line_btn.setFixedSize(32, 32)
+        add_line_btn.clicked.connect(self.on_add_line)
+        shape_btns_layout.addWidget(add_line_btn)
+        
+        del_shape_btn = QPushButton("🗑")
+        del_shape_btn.setToolTip("Delete selected shape")
+        del_shape_btn.setFixedSize(32, 32)
+        del_shape_btn.clicked.connect(self.on_delete_shape)
+        shape_btns_layout.addWidget(del_shape_btn)
+        
+        shape_btns_layout.addStretch()
+        shape_layout.addLayout(shape_btns_layout)
+
+        # Color pickers
+        colors_layout = QHBoxLayout()
+        
+        self.stroke_color_btn = QPushButton()
+        self.stroke_color_btn.setFixedSize(28, 28)
+        self.stroke_color_btn.setStyleSheet(f"background-color: {self.shape_stroke_color.name()}; border: 2px solid #555;")
+        self.stroke_color_btn.setToolTip("Stroke color")
+        self.stroke_color_btn.clicked.connect(self.on_pick_stroke_color)
+        colors_layout.addWidget(QLabel("Stroke:"))
+        colors_layout.addWidget(self.stroke_color_btn)
+        
+        colors_layout.addSpacing(10)
+        
+        self.fill_color_btn = QPushButton()
+        self.fill_color_btn.setFixedSize(28, 28)
+        self.fill_color_btn.setStyleSheet("background-color: transparent; border: 2px solid #555;")
+        self.fill_color_btn.setToolTip("Fill color")
+        self.fill_color_btn.clicked.connect(self.on_pick_fill_color)
+        colors_layout.addWidget(QLabel("Fill:"))
+        colors_layout.addWidget(self.fill_color_btn)
+        
+        colors_layout.addStretch()
+        shape_layout.addLayout(colors_layout)
+
+        # Stroke width
+        stroke_w_layout = QHBoxLayout()
+        stroke_w_layout.addWidget(QLabel("Width:"))
+        self.stroke_width_spin = QSpinBox()
+        self.stroke_width_spin.setRange(1, 50)
+        self.stroke_width_spin.setValue(3)
+        self.stroke_width_spin.valueChanged.connect(self.on_shape_style_changed)
+        stroke_w_layout.addWidget(self.stroke_width_spin)
+        stroke_w_layout.addWidget(QLabel("px"))
+        stroke_w_layout.addStretch()
+        shape_layout.addLayout(stroke_w_layout)
+
+        # Neon glow controls
+        self.neon_checkbox = QCheckBox("Neon glow")
+        self.neon_checkbox.setChecked(True)
+        self.neon_checkbox.stateChanged.connect(self.on_shape_style_changed)
+        shape_layout.addWidget(self.neon_checkbox)
+
+        neon_layout = QFormLayout()
+        self.neon_radius_spin = QSpinBox()
+        self.neon_radius_spin.setRange(0, 100)
+        self.neon_radius_spin.setValue(15)
+        self.neon_radius_spin.valueChanged.connect(self.on_shape_style_changed)
+        neon_layout.addRow("Glow radius:", self.neon_radius_spin)
+
+        self.neon_intensity_spin = QSpinBox()
+        self.neon_intensity_spin.setRange(0, 255)
+        self.neon_intensity_spin.setValue(200)
+        self.neon_intensity_spin.valueChanged.connect(self.on_shape_style_changed)
+        neon_layout.addRow("Glow intensity:", self.neon_intensity_spin)
+        
+        shape_layout.addLayout(neon_layout)
+
+        # Shapes rotate with knob option
+        self.shapes_rotate_checkbox = QCheckBox("Shapes rotate with knob")
+        self.shapes_rotate_checkbox.setChecked(True)
+        self.shapes_rotate_checkbox.setToolTip("When checked, shapes will rotate along with the knob in export")
+        shape_layout.addWidget(self.shapes_rotate_checkbox)
+
+        controls_layout.addWidget(shape_group)
 
         controls_layout.addSpacing(8)
 
@@ -394,9 +537,19 @@ class KnobAnimationTab(QWidget):
         self.update_visual_guides()
         self.info_label.setText(f"Loaded: {selected}")
 
+    def on_set_center_mode_toggled(self, checked: bool) -> None:
+        """Toggle the set-center mode on the view."""
+        self.knob_view.set_center_mode(checked)
+        if checked:
+            self.set_center_btn.setText("📍 Click canvas to set center...")
+        else:
+            self.set_center_btn.setText("📍 Set rotation center (Ctrl+Click)")
+
     def set_rotation_center(self, pos: QPointF) -> None:
         self.rotation_center = pos
         self.center_label.setText(f"Center: ({pos.x():.0f}, {pos.y():.0f})")
+        # Turn off center mode after setting
+        self.set_center_btn.setChecked(False)
         self.update_visual_guides()
 
     # ------------------------------------------------------------------ Wheel handlers
@@ -551,7 +704,7 @@ class KnobAnimationTab(QWidget):
         # Load original image with PIL for rotation
         knob_img = Image.open(self.knob_path).convert("RGBA")
         
-        frames = self.frames_spin.value()
+        frames_count = self.frames_spin.value()
         layout = self.layout_combo.currentText()
         offset = self.offset_spin.value()
         grid_cols = self.grid_cols_spin.value()
@@ -561,13 +714,13 @@ class KnobAnimationTab(QWidget):
 
         # Calculate spritesheet dimensions
         if layout == "Horizontal":
-            sheet_width = frame_width * frames + offset * (frames - 1)
+            sheet_width = frame_width * frames_count + offset * (frames_count - 1)
             sheet_height = frame_height
         elif layout == "Vertical":
             sheet_width = frame_width
-            sheet_height = frame_height * frames + offset * (frames - 1)
+            sheet_height = frame_height * frames_count + offset * (frames_count - 1)
         else:  # Grid
-            rows = math.ceil(frames / grid_cols)
+            rows = math.ceil(frames_count / grid_cols)
             sheet_width = frame_width * grid_cols + offset * (grid_cols - 1)
             sheet_height = frame_height * rows + offset * (rows - 1)
 
@@ -577,22 +730,69 @@ class KnobAnimationTab(QWidget):
         cx = self.rotation_center.x()
         cy = self.rotation_center.y()
 
-        for i in range(frames):
-            t = i / (frames - 1) if frames > 1 else 0
+        # Check if we have shapes to include
+        visible_shapes = [s for s in self.shapes if s.isVisible()]
+        shapes_rotate = self.shapes_rotate_checkbox.isChecked()
+
+        # Hide visual guides during export
+        guides_to_hide = [self.center_marker, self.rotation_circle, 
+                         self.start_line, self.end_line, self.current_line]
+        for guide in guides_to_hide:
+            if guide:
+                guide.setVisible(False)
+
+        for i in range(frames_count):
+            t = i / (frames_count - 1) if frames_count > 1 else 0
             target_angle = self.start_angle + t * (self.end_angle - self.start_angle)
             
             # Calculate rotation: target_angle - pointer_angle
-            # This makes the pointer (originally at pointer_angle) point to target_angle
             rotation = target_angle - self.pointer_angle
             
-            # Rotate image around center
-            # PIL rotates counter-clockwise, so negate for clockwise rotation
+            # Rotate knob image
             rotated = knob_img.rotate(
                 -rotation,
                 resample=Image.Resampling.BICUBIC,
                 center=(cx, cy),
                 expand=False
             )
+
+            # If we have shapes, render them on top
+            if visible_shapes:
+                # Apply rotation to knob item in scene
+                self._apply_rotation(target_angle)
+                
+                # Optionally rotate shapes too
+                if shapes_rotate:
+                    shape_transform = QTransform()
+                    shape_transform.translate(cx, cy)
+                    shape_transform.rotate(rotation)
+                    shape_transform.translate(-cx, -cy)
+                    for shape in visible_shapes:
+                        shape.setTransform(shape_transform)
+                
+                # Render scene to QImage
+                from PyQt6.QtGui import QImage
+                qimg = QImage(frame_width, frame_height, QImage.Format.Format_ARGB32)
+                qimg.fill(Qt.GlobalColor.transparent)
+                
+                painter = QPainter(qimg)
+                painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+                # Render just the knob area
+                source_rect = QRectF(0, 0, frame_width, frame_height)
+                self.knob_scene.render(painter, QRectF(0, 0, frame_width, frame_height), source_rect)
+                painter.end()
+                
+                # Reset shape transforms
+                if shapes_rotate:
+                    for shape in visible_shapes:
+                        shape.setTransform(QTransform())
+                
+                # Convert QImage to PIL Image
+                ptr = qimg.bits()
+                ptr.setsize(qimg.sizeInBytes())
+                frame_img = Image.frombytes("RGBA", (frame_width, frame_height), bytes(ptr), "raw", "BGRA")
+            else:
+                frame_img = rotated
 
             # Calculate position in spritesheet
             if layout == "Horizontal":
@@ -607,11 +807,148 @@ class KnobAnimationTab(QWidget):
                 x = col * (frame_width + offset)
                 y = row * (frame_height + offset)
 
-            sheet.paste(rotated, (x, y))
+            sheet.paste(frame_img, (x, y))
+
+        # Restore visual guides
+        for guide in guides_to_hide:
+            if guide:
+                guide.setVisible(True)
+        
+        # Restore current rotation
+        self._apply_rotation(self.current_angle)
 
         sheet_path = output_dir / "knob_spritesheet.png"
         sheet.save(sheet_path)
-        self.info_label.setText(f"Exported {frames} frames to {sheet_path}")
+        self.info_label.setText(f"Exported {frames_count} frames to {sheet_path}")
+
+    # ------------------------------------------------------------------ Shape Tools
+
+    def on_add_rect(self) -> None:
+        """Add a rectangle shape to the knob canvas."""
+        if self.rotation_center is None:
+            self.info_label.setText("Load a knob first!")
+            return
+        
+        cx, cy = self.rotation_center.x(), self.rotation_center.y()
+        rect = ResizableRectItem(cx - 40, cy - 40, 80, 80)
+        self._setup_shape(rect)
+        self.knob_scene.addItem(rect)
+        self.shapes.append(rect)
+        rect.setSelected(True)
+
+    def on_add_circle(self) -> None:
+        """Add a circle shape to the knob canvas."""
+        if self.rotation_center is None:
+            self.info_label.setText("Load a knob first!")
+            return
+        
+        cx, cy = self.rotation_center.x(), self.rotation_center.y()
+        circle = ResizableEllipseItem(cx - 50, cy - 50, 100, 100)
+        self._setup_shape(circle)
+        self.knob_scene.addItem(circle)
+        self.shapes.append(circle)
+        circle.setSelected(True)
+
+    def on_add_line(self) -> None:
+        """Add a line shape to the knob canvas."""
+        if self.rotation_center is None:
+            self.info_label.setText("Load a knob first!")
+            return
+        
+        cx, cy = self.rotation_center.x(), self.rotation_center.y()
+        line = ResizableLineItem(cx - 30, cy, cx + 30, cy)
+        self._setup_shape(line)
+        self.knob_scene.addItem(line)
+        self.shapes.append(line)
+        line.setSelected(True)
+
+    def _setup_shape(self, shape) -> None:
+        """Configure a newly created shape with current style settings."""
+        shape.setZValue(50)  # Above knob, below guides
+        shape.setFlag(shape.GraphicsItemFlag.ItemIsSelectable, True)
+        shape.setFlag(shape.GraphicsItemFlag.ItemIsMovable, True)
+        
+        # Apply current colors
+        pen = QPen(self.shape_stroke_color, self.stroke_width_spin.value())
+        shape.setPen(pen)
+        
+        if self.shape_fill_color.alpha() > 0:
+            shape.setBrush(QBrush(self.shape_fill_color))
+        else:
+            shape.setBrush(QBrush(Qt.GlobalColor.transparent))
+        
+        # Apply neon glow if enabled
+        self._apply_neon_to_shape(shape)
+
+    def _apply_neon_to_shape(self, shape) -> None:
+        """Apply or remove neon glow effect from a shape."""
+        if self.neon_checkbox.isChecked():
+            effect = QGraphicsDropShadowEffect()
+            effect.setBlurRadius(self.neon_radius_spin.value())
+            effect.setOffset(0, 0)
+            glow_color = QColor(self.shape_stroke_color)
+            glow_color.setAlpha(self.neon_intensity_spin.value())
+            effect.setColor(glow_color)
+            shape.setGraphicsEffect(effect)
+        else:
+            shape.setGraphicsEffect(None)
+
+    def on_delete_shape(self) -> None:
+        """Delete the currently selected shape."""
+        selected = self.knob_scene.selectedItems()
+        for item in selected:
+            if item in self.shapes:
+                self.shapes.remove(item)
+                item.setVisible(False)
+                item.setGraphicsEffect(None)
+
+    def on_pick_stroke_color(self) -> None:
+        """Open color picker for stroke color."""
+        color = QColorDialog.getColor(
+            self.shape_stroke_color, self, "Pick stroke color",
+            QColorDialog.ColorDialogOption.ShowAlphaChannel
+        )
+        if color.isValid():
+            self.shape_stroke_color = color
+            self.stroke_color_btn.setStyleSheet(
+                f"background-color: {color.name()}; border: 2px solid #555;"
+            )
+            self.on_shape_style_changed()
+
+    def on_pick_fill_color(self) -> None:
+        """Open color picker for fill color."""
+        color = QColorDialog.getColor(
+            self.shape_fill_color, self, "Pick fill color",
+            QColorDialog.ColorDialogOption.ShowAlphaChannel
+        )
+        if color.isValid():
+            self.shape_fill_color = color
+            if color.alpha() > 0:
+                self.fill_color_btn.setStyleSheet(
+                    f"background-color: rgba({color.red()},{color.green()},{color.blue()},{color.alpha()}); border: 2px solid #555;"
+                )
+            else:
+                self.fill_color_btn.setStyleSheet("background-color: transparent; border: 2px solid #555;")
+            self.on_shape_style_changed()
+
+    def on_shape_style_changed(self) -> None:
+        """Update all shapes with current style settings."""
+        for shape in self.shapes:
+            if not shape.isVisible():
+                continue
+            
+            # Update pen (stroke)
+            pen = QPen(self.shape_stroke_color, self.stroke_width_spin.value())
+            shape.setPen(pen)
+            
+            # Update brush (fill)
+            if self.shape_fill_color.alpha() > 0:
+                shape.setBrush(QBrush(self.shape_fill_color))
+            else:
+                shape.setBrush(QBrush(Qt.GlobalColor.transparent))
+            
+            # Update neon effect
+            self._apply_neon_to_shape(shape)
 
     # ------------------------------------------------------------------ Helpers
 
