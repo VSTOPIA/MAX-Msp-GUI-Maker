@@ -11,8 +11,8 @@ import math
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from PyQt6.QtCore import Qt, QRectF, QPointF
-from PyQt6.QtGui import QPixmap, QPen, QColor, QBrush, QPainter, QTransform
+from PyQt6.QtCore import Qt, QRectF, QPointF, pyqtSignal
+from PyQt6.QtGui import QPixmap, QPen, QColor, QBrush, QPainter, QTransform, QConicalGradient
 from PyQt6.QtWidgets import (
     QFormLayout,
     QGraphicsEllipseItem,
@@ -38,36 +38,116 @@ if TYPE_CHECKING:
     from gui import MainWindow
 
 
+class AngleWheelWidget(QWidget):
+    """A small draggable wheel to set an angle by rotating."""
+    
+    angleChanged = pyqtSignal(float)
+    
+    def __init__(self, label: str, color: QColor, initial_angle: float = 0, parent=None):
+        super().__init__(parent)
+        self._label = label
+        self._color = color
+        self._angle = initial_angle
+        self._dragging = False
+        
+        self.setFixedSize(70, 90)
+        self.setMouseTracking(True)
+    
+    def angle(self) -> float:
+        return self._angle
+    
+    def setAngle(self, angle: float, emit: bool = True) -> None:
+        self._angle = angle
+        self.update()
+        if emit:
+            self.angleChanged.emit(angle)
+    
+    def paintEvent(self, event) -> None:
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        w, h = self.width(), self.height()
+        radius = 28
+        cx, cy = w // 2, 38
+        
+        # Draw label
+        painter.setPen(QColor("#cccccc"))
+        painter.drawText(QRectF(0, 0, w, 18), Qt.AlignmentFlag.AlignCenter, self._label)
+        
+        # Draw outer ring (dark)
+        painter.setPen(QPen(QColor("#333333"), 2))
+        painter.setBrush(QBrush(QColor("#1a1a1a")))
+        painter.drawEllipse(QPointF(cx, cy), radius, radius)
+        
+        # Draw tick marks
+        painter.setPen(QPen(QColor("#555555"), 1))
+        for i in range(12):
+            angle_rad = math.radians(i * 30)
+            inner_r = radius - 4
+            outer_r = radius - 1
+            x1 = cx + inner_r * math.cos(angle_rad)
+            y1 = cy + inner_r * math.sin(angle_rad)
+            x2 = cx + outer_r * math.cos(angle_rad)
+            y2 = cy + outer_r * math.sin(angle_rad)
+            painter.drawLine(QPointF(x1, y1), QPointF(x2, y2))
+        
+        # Draw pointer line
+        angle_rad = math.radians(self._angle)
+        px = cx + (radius - 8) * math.cos(angle_rad)
+        py = cy + (radius - 8) * math.sin(angle_rad)
+        
+        # Glow effect
+        for glow_w in [8, 6, 4]:
+            glow_color = QColor(self._color)
+            glow_color.setAlpha(40)
+            painter.setPen(QPen(glow_color, glow_w, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+            painter.drawLine(QPointF(cx, cy), QPointF(px, py))
+        
+        # Main pointer line
+        painter.setPen(QPen(self._color, 3, Qt.PenStyle.SolidLine, Qt.PenCapStyle.RoundCap))
+        painter.drawLine(QPointF(cx, cy), QPointF(px, py))
+        
+        # Center dot
+        painter.setBrush(QBrush(self._color))
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.drawEllipse(QPointF(cx, cy), 4, 4)
+        
+        # Draw angle value
+        painter.setPen(QColor("#aaaaaa"))
+        painter.drawText(QRectF(0, h - 18, w, 18), Qt.AlignmentFlag.AlignCenter, f"{self._angle:.0f}°")
+    
+    def mousePressEvent(self, event) -> None:
+        if event.button() == Qt.MouseButton.LeftButton:
+            self._dragging = True
+            self._update_angle_from_pos(event.pos())
+    
+    def mouseMoveEvent(self, event) -> None:
+        if self._dragging:
+            self._update_angle_from_pos(event.pos())
+    
+    def mouseReleaseEvent(self, event) -> None:
+        self._dragging = False
+    
+    def _update_angle_from_pos(self, pos) -> None:
+        cx, cy = self.width() // 2, 38
+        dx = pos.x() - cx
+        dy = pos.y() - cy
+        angle = math.degrees(math.atan2(dy, dx))
+        self.setAngle(angle)
+
+
 class KnobView(QGraphicsView):
-    """Custom QGraphicsView for knob animation with click handling."""
+    """Custom QGraphicsView for knob animation - click to set rotation center."""
 
     def __init__(self, scene: QGraphicsScene, owner: "KnobAnimationTab") -> None:
         super().__init__(scene)
         self._owner = owner
-        self._mode = "center"  # "center", "start", "end"
-
-    def set_mode(self, mode: str) -> None:
-        self._mode = mode
 
     def mousePressEvent(self, event) -> None:
         if event.button() == Qt.MouseButton.LeftButton:
             scene_pos = self.mapToScene(event.pos())
-            if self._mode == "center":
-                self._owner.set_rotation_center(scene_pos)
-            elif self._mode == "start":
-                self._owner.set_start_angle_from_point(scene_pos)
-            elif self._mode == "end":
-                self._owner.set_end_angle_from_point(scene_pos)
+            self._owner.set_rotation_center(scene_pos)
         super().mousePressEvent(event)
-
-    def mouseMoveEvent(self, event) -> None:
-        if event.buttons() & Qt.MouseButton.LeftButton:
-            scene_pos = self.mapToScene(event.pos())
-            if self._mode == "start":
-                self._owner.set_start_angle_from_point(scene_pos)
-            elif self._mode == "end":
-                self._owner.set_end_angle_from_point(scene_pos)
-        super().mouseMoveEvent(event)
 
 
 class KnobAnimationTab(QWidget):
@@ -136,103 +216,62 @@ class KnobAnimationTab(QWidget):
 
         controls_layout.addSpacing(12)
 
-        # Mode selector for clicking
-        mode_group = QGroupBox("Click mode")
-        mode_layout = QVBoxLayout(mode_group)
+        # Angle wheels for visual calibration
+        wheels_group = QGroupBox("Angle calibration (drag to rotate)")
+        wheels_layout = QHBoxLayout(wheels_group)
         
-        self.mode_combo = QComboBox()
-        self.mode_combo.addItems(["Set rotation center", "Set start angle", "Set end angle"])
-        self.mode_combo.currentIndexChanged.connect(self.on_mode_changed)
-        mode_layout.addWidget(self.mode_combo)
+        # Pointer wheel (blue) - where the knob pointer is in original image
+        self.pointer_wheel = AngleWheelWidget("Pointer", QColor("#00aaff"), -135)
+        self.pointer_wheel.angleChanged.connect(self.on_pointer_wheel_changed)
+        wheels_layout.addWidget(self.pointer_wheel)
         
-        controls_layout.addWidget(mode_group)
+        # Start angle wheel (green)
+        self.start_wheel = AngleWheelWidget("Start", QColor("#00ff00"), -135)
+        self.start_wheel.angleChanged.connect(self.on_start_wheel_changed)
+        wheels_layout.addWidget(self.start_wheel)
+        
+        # End angle wheel (red)
+        self.end_wheel = AngleWheelWidget("End", QColor("#ff4444"), 135)
+        self.end_wheel.angleChanged.connect(self.on_end_wheel_changed)
+        wheels_layout.addWidget(self.end_wheel)
+        
+        controls_layout.addWidget(wheels_group)
 
-        controls_layout.addSpacing(12)
+        controls_layout.addSpacing(8)
 
         # Rotation info labels
-        self.center_label = QLabel("Center: –")
-        self.start_angle_label = QLabel("Start angle: -135°")
-        self.end_angle_label = QLabel("End angle: 135°")
+        self.center_label = QLabel("Center: – (click on canvas to set)")
         self.current_angle_label = QLabel("Current: -135°")
         controls_layout.addWidget(self.center_label)
-        controls_layout.addWidget(self.start_angle_label)
-        controls_layout.addWidget(self.end_angle_label)
         controls_layout.addWidget(self.current_angle_label)
 
-        controls_layout.addSpacing(12)
+        controls_layout.addSpacing(8)
 
-        # Manual angle inputs
-        angles_group = QGroupBox("Angle settings")
-        angles_layout = QFormLayout(angles_group)
-
-        # Knob pointer angle - where the pointer is in the original image
-        pointer_layout = QHBoxLayout()
-        self.pointer_angle_spin = QSpinBox()
-        self.pointer_angle_spin.setRange(-720, 720)
-        self.pointer_angle_spin.setValue(-135)  # Default for sample knobs
-        self.pointer_angle_spin.valueChanged.connect(self.on_pointer_angle_changed)
-        pointer_layout.addWidget(self.pointer_angle_spin)
-        flip_pointer_btn = QPushButton("+180°")
-        flip_pointer_btn.setFixedWidth(50)
-        flip_pointer_btn.clicked.connect(self.on_flip_pointer_angle)
-        pointer_layout.addWidget(flip_pointer_btn)
-        angles_layout.addRow("Knob pointer (°)", pointer_layout)
-
-        # Start angle with flip button
-        start_layout = QHBoxLayout()
-        self.start_angle_spin = QSpinBox()
-        self.start_angle_spin.setRange(-720, 720)
-        self.start_angle_spin.setValue(-135)
-        self.start_angle_spin.valueChanged.connect(self.on_start_angle_spin_changed)
-        start_layout.addWidget(self.start_angle_spin)
-        flip_start_btn = QPushButton("+180°")
-        flip_start_btn.setFixedWidth(50)
-        flip_start_btn.clicked.connect(self.on_flip_start_angle)
-        start_layout.addWidget(flip_start_btn)
-        angles_layout.addRow("Start angle (°)", start_layout)
-
-        # End angle with flip button
-        end_layout = QHBoxLayout()
-        self.end_angle_spin = QSpinBox()
-        self.end_angle_spin.setRange(-720, 720)
-        self.end_angle_spin.setValue(135)
-        self.end_angle_spin.valueChanged.connect(self.on_end_angle_spin_changed)
-        end_layout.addWidget(self.end_angle_spin)
-        flip_end_btn = QPushButton("+180°")
-        flip_end_btn.setFixedWidth(50)
-        flip_end_btn.clicked.connect(self.on_flip_end_angle)
-        end_layout.addWidget(flip_end_btn)
-        angles_layout.addRow("End angle (°)", end_layout)
+        # Additional settings
+        settings_group = QGroupBox("Settings")
+        settings_layout = QFormLayout(settings_group)
 
         # Circle radius for visual guide
         self.guide_radius_spin = QSpinBox()
         self.guide_radius_spin.setRange(10, 500)
         self.guide_radius_spin.setValue(80)
         self.guide_radius_spin.valueChanged.connect(self.update_visual_guides)
-        angles_layout.addRow("Guide radius (px)", self.guide_radius_spin)
+        settings_layout.addRow("Guide radius (px)", self.guide_radius_spin)
 
-        controls_layout.addWidget(angles_group)
+        controls_layout.addWidget(settings_group)
 
-        controls_layout.addSpacing(12)
+        controls_layout.addSpacing(8)
 
-        # Preview slider with flip button for cyan line
-        preview_label_layout = QHBoxLayout()
-        preview_label_layout.addWidget(QLabel("Preview rotation"))
-        flip_current_btn = QPushButton("+180°")
-        flip_current_btn.setFixedWidth(50)
-        flip_current_btn.clicked.connect(self.on_flip_current_angle)
-        preview_label_layout.addWidget(flip_current_btn)
-        preview_label_layout.addStretch()
-        controls_layout.addLayout(preview_label_layout)
-        
+        # Preview slider
+        controls_layout.addWidget(QLabel("Preview rotation"))
         self.preview_slider = QSlider(Qt.Orientation.Horizontal)
         self.preview_slider.setRange(0, 100)
         self.preview_slider.setValue(0)
         self.preview_slider.valueChanged.connect(self.on_preview_slider_changed)
         controls_layout.addWidget(self.preview_slider)
 
-        # Reverse direction button - switches between inside/outside the limits
-        reverse_btn = QPushButton("↻ Reverse direction (go other way around)")
+        # Reverse direction button
+        reverse_btn = QPushButton("↻ Reverse direction")
         reverse_btn.clicked.connect(self.on_reverse_direction)
         controls_layout.addWidget(reverse_btn)
 
@@ -340,143 +379,46 @@ class KnobAnimationTab(QWidget):
         self.update_visual_guides()
         self.info_label.setText(f"Loaded: {selected}")
 
-    def on_mode_changed(self, index: int) -> None:
-        modes = ["center", "start", "end"]
-        self.knob_view.set_mode(modes[index])
-
     def set_rotation_center(self, pos: QPointF) -> None:
         self.rotation_center = pos
         self.center_label.setText(f"Center: ({pos.x():.0f}, {pos.y():.0f})")
         self.update_visual_guides()
 
-    def set_start_angle_from_point(self, pos: QPointF) -> None:
-        if self.rotation_center is None:
-            return
-        angle = self._angle_from_point(pos)
-        self.start_angle = angle
-        self.start_angle_spin.blockSignals(True)
-        self.start_angle_spin.setValue(int(angle))
-        self.start_angle_spin.blockSignals(False)
-        self.start_angle_label.setText(f"Start angle: {angle:.0f}°")
-        self.update_visual_guides()
+    # ------------------------------------------------------------------ Wheel handlers
 
-    def set_end_angle_from_point(self, pos: QPointF) -> None:
-        if self.rotation_center is None:
-            return
-        angle = self._angle_from_point(pos)
-        self.end_angle = angle
-        self.end_angle_spin.blockSignals(True)
-        self.end_angle_spin.setValue(int(angle))
-        self.end_angle_spin.blockSignals(False)
-        self.end_angle_label.setText(f"End angle: {angle:.0f}°")
-        self.update_visual_guides()
-
-    def _angle_from_point(self, pos: QPointF) -> float:
-        """Calculate angle in degrees from rotation center to point."""
-        if self.rotation_center is None:
-            return 0.0
-        dx = pos.x() - self.rotation_center.x()
-        dy = pos.y() - self.rotation_center.y()
-        # atan2 gives angle from positive X axis, counter-clockwise
-        # We want 0 at top, clockwise positive (like a clock)
-        angle = math.degrees(math.atan2(dy, dx))
-        return angle
-
-    def on_pointer_angle_changed(self, value: int) -> None:
+    def on_pointer_wheel_changed(self, angle: float) -> None:
         """Update the angle where the pointer is in the original knob image."""
-        self.pointer_angle = float(value)
+        self.pointer_angle = angle
         # Re-apply current rotation with new pointer angle
         if self.knob_item is not None:
             self._apply_rotation(self.current_angle)
         self.update_visual_guides()
 
-    def on_flip_pointer_angle(self) -> None:
-        """Add 180° to pointer angle to flip to opposite side."""
-        new_value = self.pointer_angle_spin.value() + 180
-        if new_value > 720:
-            new_value -= 360
-        self.pointer_angle_spin.setValue(new_value)
-
-    def on_start_angle_spin_changed(self, value: int) -> None:
-        self.start_angle = float(value)
-        self.start_angle_label.setText(f"Start angle: {value}°")
+    def on_start_wheel_changed(self, angle: float) -> None:
+        """Update start angle from wheel."""
+        self.start_angle = angle
         self.update_visual_guides()
 
-    def on_end_angle_spin_changed(self, value: int) -> None:
-        self.end_angle = float(value)
-        self.end_angle_label.setText(f"End angle: {value}°")
-        self.update_visual_guides()
-
-    def on_flip_start_angle(self) -> None:
-        """Add 180° to start angle to flip it to the other side of the circle."""
-        new_value = self.start_angle_spin.value() + 180
-        # Keep within range
-        if new_value > 720:
-            new_value -= 360
-        self.start_angle_spin.setValue(new_value)
-
-    def on_flip_end_angle(self) -> None:
-        """Add 180° to end angle to flip it to the other side of the circle."""
-        new_value = self.end_angle_spin.value() + 180
-        # Keep within range
-        if new_value > 720:
-            new_value -= 360
-        self.end_angle_spin.setValue(new_value)
-
-    def on_flip_current_angle(self) -> None:
-        """Flip the entire rotation range by 180° - moves both knob and cyan line."""
-        # Flip start angle
-        new_start = self.start_angle_spin.value() + 180
-        if new_start > 720:
-            new_start -= 360
-        
-        # Flip end angle
-        new_end = self.end_angle_spin.value() + 180
-        if new_end > 720:
-            new_end -= 360
-        
-        # Update both (this will trigger updates)
-        self.start_angle_spin.blockSignals(True)
-        self.end_angle_spin.blockSignals(True)
-        self.start_angle_spin.setValue(new_start)
-        self.end_angle_spin.setValue(new_end)
-        self.start_angle_spin.blockSignals(False)
-        self.end_angle_spin.blockSignals(False)
-        
-        # Update internal values
-        self.start_angle = float(new_start)
-        self.end_angle = float(new_end)
-        self.start_angle_label.setText(f"Start angle: {new_start}°")
-        self.end_angle_label.setText(f"End angle: {new_end}°")
-        
-        # Recalculate current angle based on slider position
-        t = self.preview_slider.value() / 100.0
-        self.current_angle = self.start_angle + t * (self.end_angle - self.start_angle)
-        self.current_angle_label.setText(f"Current: {self.current_angle:.0f}°")
-        
-        # Apply rotation and update guides
-        if self.knob_item is not None:
-            self._apply_rotation(self.current_angle)
+    def on_end_wheel_changed(self, angle: float) -> None:
+        """Update end angle from wheel."""
+        self.end_angle = angle
         self.update_visual_guides()
 
     def on_reverse_direction(self) -> None:
         """Reverse the rotation direction - go the other way around the circle."""
-        # To reverse direction, we adjust the end angle by ±360°
-        # This makes the interpolation go the "long way" around instead of the "short way"
-        current_end = self.end_angle_spin.value()
-        current_start = self.start_angle_spin.value()
-        
         # Calculate the current arc length
-        arc = current_end - current_start
+        arc = self.end_angle - self.start_angle
         
         # Reverse by going the other way (add or subtract 360 from end)
         if arc > 0:
-            new_end = current_end - 360
+            new_end = self.end_angle - 360
         else:
-            new_end = current_end + 360
+            new_end = self.end_angle + 360
         
-        # Update end angle
-        self.end_angle_spin.setValue(new_end)
+        # Update end angle via wheel (will trigger update)
+        self.end_angle = new_end
+        self.end_wheel.setAngle(new_end, emit=False)
+        self.update_visual_guides()
 
     def on_preview_slider_changed(self, value: int) -> None:
         if self.knob_item is None or self.rotation_center is None:
