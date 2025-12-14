@@ -1,10 +1,14 @@
 """
 Generate sample knob images for testing the Knob Animation tab.
+Uses supersampling (render at 2x then downscale) for smooth anti-aliased edges.
 """
 
 from PIL import Image, ImageDraw, ImageFilter
 import math
 from pathlib import Path
+
+# Supersampling factor for anti-aliasing (2x = render at double size, then downscale)
+SUPERSAMPLE = 2
 
 
 def create_metallic_knob(size: int = 128, pointer_angle: float = -135) -> Image.Image:
@@ -18,13 +22,15 @@ def create_metallic_knob(size: int = 128, pointer_angle: float = -135) -> Image.
     Returns:
         RGBA Image of the knob
     """
-    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    # Render at higher resolution for anti-aliasing
+    render_size = size * SUPERSAMPLE
+    img = Image.new("RGBA", (render_size, render_size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
     
-    center = size // 2
-    outer_radius = size // 2 - 4
-    inner_radius = outer_radius - 8
-    pointer_radius = inner_radius - 6
+    center = render_size // 2
+    outer_radius = render_size // 2 - 4 * SUPERSAMPLE
+    inner_radius = outer_radius - 8 * SUPERSAMPLE
+    pointer_radius = inner_radius - 6 * SUPERSAMPLE
     
     # Outer ring (dark edge)
     draw.ellipse(
@@ -32,11 +38,11 @@ def create_metallic_knob(size: int = 128, pointer_angle: float = -135) -> Image.
          center + outer_radius, center + outer_radius],
         fill=(40, 40, 45, 255),
         outline=(20, 20, 25, 255),
-        width=2
+        width=2 * SUPERSAMPLE
     )
     
     # Main knob body with gradient-like effect
-    for i in range(inner_radius, 0, -2):
+    for i in range(inner_radius, 0, -2 * SUPERSAMPLE):
         # Create a gradient from light gray to darker
         t = i / inner_radius
         gray = int(80 + 60 * t)
@@ -49,27 +55,28 @@ def create_metallic_knob(size: int = 128, pointer_angle: float = -135) -> Image.
     # Highlight on top-left
     highlight_offset = inner_radius // 3
     draw.ellipse(
-        [center - highlight_offset - 10, center - highlight_offset - 10,
-         center - highlight_offset + 15, center - highlight_offset + 15],
+        [center - highlight_offset - 10 * SUPERSAMPLE, center - highlight_offset - 10 * SUPERSAMPLE,
+         center - highlight_offset + 15 * SUPERSAMPLE, center - highlight_offset + 15 * SUPERSAMPLE],
         fill=(180, 180, 185, 100)
     )
     
     # Pointer/indicator line
     rad = math.radians(pointer_angle)
-    px1 = center + int(10 * math.cos(rad))
-    py1 = center + int(10 * math.sin(rad))
+    px1 = center + int(10 * SUPERSAMPLE * math.cos(rad))
+    py1 = center + int(10 * SUPERSAMPLE * math.sin(rad))
     px2 = center + int(pointer_radius * math.cos(rad))
     py2 = center + int(pointer_radius * math.sin(rad))
     
     # Pointer shadow
-    draw.line([(px1 + 2, py1 + 2), (px2 + 2, py2 + 2)], fill=(30, 30, 35, 150), width=4)
+    draw.line([(px1 + 2 * SUPERSAMPLE, py1 + 2 * SUPERSAMPLE), (px2 + 2 * SUPERSAMPLE, py2 + 2 * SUPERSAMPLE)], 
+              fill=(30, 30, 35, 150), width=4 * SUPERSAMPLE)
     # Pointer main
-    draw.line([(px1, py1), (px2, py2)], fill=(255, 80, 80, 255), width=3)
+    draw.line([(px1, py1), (px2, py2)], fill=(255, 80, 80, 255), width=3 * SUPERSAMPLE)
     # Pointer highlight
-    draw.line([(px1, py1), (px2, py2)], fill=(255, 150, 150, 255), width=1)
+    draw.line([(px1, py1), (px2, py2)], fill=(255, 150, 150, 255), width=1 * SUPERSAMPLE)
     
     # Center cap
-    cap_radius = 8
+    cap_radius = 8 * SUPERSAMPLE
     draw.ellipse(
         [center - cap_radius, center - cap_radius,
          center + cap_radius, center + cap_radius],
@@ -77,6 +84,8 @@ def create_metallic_knob(size: int = 128, pointer_angle: float = -135) -> Image.
         outline=(30, 30, 35, 255)
     )
     
+    # Downscale with high-quality resampling for anti-aliased edges
+    img = img.resize((size, size), Image.Resampling.LANCZOS)
     return img
 
 
@@ -93,23 +102,24 @@ def create_neon_knob(size: int = 128, pointer_angle: float = -135,
     Returns:
         RGBA Image of the knob
     """
-    # Create larger image for glow effect
-    glow_padding = 20
-    full_size = size + glow_padding * 2
+    # Render at higher resolution for anti-aliasing
+    render_size = size * SUPERSAMPLE
+    glow_padding = 20 * SUPERSAMPLE
+    full_size = render_size + glow_padding * 2
     img = Image.new("RGBA", (full_size, full_size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
     
     center = full_size // 2
-    outer_radius = size // 2 - 4
-    inner_radius = outer_radius - 6
-    pointer_radius = inner_radius - 8
+    outer_radius = render_size // 2 - 4 * SUPERSAMPLE
+    inner_radius = outer_radius - 6 * SUPERSAMPLE
+    pointer_radius = inner_radius - 8 * SUPERSAMPLE
     
     r, g, b = color
     
     # Dark background circle
     draw.ellipse(
-        [center - outer_radius - 2, center - outer_radius - 2,
-         center + outer_radius + 2, center + outer_radius + 2],
+        [center - outer_radius - 2 * SUPERSAMPLE, center - outer_radius - 2 * SUPERSAMPLE,
+         center + outer_radius + 2 * SUPERSAMPLE, center + outer_radius + 2 * SUPERSAMPLE],
         fill=(15, 15, 20, 255)
     )
     
@@ -118,7 +128,7 @@ def create_neon_knob(size: int = 128, pointer_angle: float = -135,
         [center - outer_radius, center - outer_radius,
          center + outer_radius, center + outer_radius],
         outline=(r, g, b, 255),
-        width=3
+        width=3 * SUPERSAMPLE
     )
     
     # Inner circle (dark)
@@ -130,22 +140,22 @@ def create_neon_knob(size: int = 128, pointer_angle: float = -135,
     
     # Pointer/indicator
     rad = math.radians(pointer_angle)
-    px1 = center + int(12 * math.cos(rad))
-    py1 = center + int(12 * math.sin(rad))
+    px1 = center + int(12 * SUPERSAMPLE * math.cos(rad))
+    py1 = center + int(12 * SUPERSAMPLE * math.sin(rad))
     px2 = center + int(pointer_radius * math.cos(rad))
     py2 = center + int(pointer_radius * math.sin(rad))
     
     # Pointer glow (draw multiple times with decreasing alpha)
-    for glow in range(8, 0, -2):
-        alpha = 50 - glow * 5
-        draw.line([(px1, py1), (px2, py2)], fill=(r, g, b, alpha), width=glow + 4)
+    for glow in range(8 * SUPERSAMPLE, 0, -2 * SUPERSAMPLE):
+        alpha = max(10, 50 - glow * 3)
+        draw.line([(px1, py1), (px2, py2)], fill=(r, g, b, alpha), width=glow + 4 * SUPERSAMPLE)
     
     # Pointer main
-    draw.line([(px1, py1), (px2, py2)], fill=(r, g, b, 255), width=3)
-    draw.line([(px1, py1), (px2, py2)], fill=(255, 255, 255, 200), width=1)
+    draw.line([(px1, py1), (px2, py2)], fill=(r, g, b, 255), width=3 * SUPERSAMPLE)
+    draw.line([(px1, py1), (px2, py2)], fill=(255, 255, 255, 200), width=1 * SUPERSAMPLE)
     
     # Center dot
-    dot_radius = 5
+    dot_radius = 5 * SUPERSAMPLE
     draw.ellipse(
         [center - dot_radius, center - dot_radius,
          center + dot_radius, center + dot_radius],
@@ -154,17 +164,19 @@ def create_neon_knob(size: int = 128, pointer_angle: float = -135,
     
     # Apply gaussian blur for glow effect
     glow_layer = img.copy()
-    glow_layer = glow_layer.filter(ImageFilter.GaussianBlur(radius=4))
+    glow_layer = glow_layer.filter(ImageFilter.GaussianBlur(radius=4 * SUPERSAMPLE))
     
     # Composite glow behind main image
     result = Image.new("RGBA", (full_size, full_size), (0, 0, 0, 0))
     result = Image.alpha_composite(result, glow_layer)
     result = Image.alpha_composite(result, img)
     
-    # Crop to original size
-    crop_box = (glow_padding, glow_padding, glow_padding + size, glow_padding + size)
+    # Crop to render size (removing glow padding)
+    crop_box = (glow_padding, glow_padding, glow_padding + render_size, glow_padding + render_size)
     result = result.crop(crop_box)
     
+    # Downscale with high-quality resampling for anti-aliased edges
+    result = result.resize((size, size), Image.Resampling.LANCZOS)
     return result
 
 
@@ -179,15 +191,17 @@ def create_cyberpunk_knob(size: int = 128, pointer_angle: float = -135) -> Image
     Returns:
         RGBA Image of the knob
     """
-    glow_padding = 20
-    full_size = size + glow_padding * 2
+    # Render at higher resolution for anti-aliasing
+    render_size = size * SUPERSAMPLE
+    glow_padding = 20 * SUPERSAMPLE
+    full_size = render_size + glow_padding * 2
     img = Image.new("RGBA", (full_size, full_size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
     
     center = full_size // 2
-    outer_radius = size // 2 - 6
-    inner_radius = outer_radius - 15
-    pointer_radius = inner_radius - 5
+    outer_radius = render_size // 2 - 6 * SUPERSAMPLE
+    inner_radius = outer_radius - 15 * SUPERSAMPLE
+    pointer_radius = inner_radius - 5 * SUPERSAMPLE
     
     # Cyberpunk colors
     cyan = (0, 255, 255)
@@ -196,8 +210,8 @@ def create_cyberpunk_knob(size: int = 128, pointer_angle: float = -135) -> Image
     
     # Dark background circle
     draw.ellipse(
-        [center - outer_radius - 2, center - outer_radius - 2,
-         center + outer_radius + 2, center + outer_radius + 2],
+        [center - outer_radius - 2 * SUPERSAMPLE, center - outer_radius - 2 * SUPERSAMPLE,
+         center + outer_radius + 2 * SUPERSAMPLE, center + outer_radius + 2 * SUPERSAMPLE],
         fill=dark_bg
     )
     
@@ -207,7 +221,7 @@ def create_cyberpunk_knob(size: int = 128, pointer_angle: float = -135) -> Image
          center + outer_radius, center + outer_radius],
         start=0, end=360,
         fill=(*magenta, 180),
-        width=2
+        width=2 * SUPERSAMPLE
     )
     
     # Inner ring - cyan
@@ -216,37 +230,37 @@ def create_cyberpunk_knob(size: int = 128, pointer_angle: float = -135) -> Image
          center + inner_radius, center + inner_radius],
         start=0, end=360,
         fill=(*cyan, 150),
-        width=1
+        width=1 * SUPERSAMPLE
     )
     
     # Tick marks around the edge
     for angle in range(-135, 136, 30):
         rad = math.radians(angle)
-        tick_start = outer_radius - 4
-        tick_end = outer_radius + 2
+        tick_start = outer_radius - 4 * SUPERSAMPLE
+        tick_end = outer_radius + 2 * SUPERSAMPLE
         x1 = center + int(tick_start * math.cos(rad))
         y1 = center + int(tick_start * math.sin(rad))
         x2 = center + int(tick_end * math.cos(rad))
         y2 = center + int(tick_end * math.sin(rad))
-        draw.line([(x1, y1), (x2, y2)], fill=(*magenta, 200), width=1)
+        draw.line([(x1, y1), (x2, y2)], fill=(*magenta, 200), width=1 * SUPERSAMPLE)
     
     # Pointer line - cyan, thin
     rad = math.radians(pointer_angle)
-    px1 = center + int(8 * math.cos(rad))
-    py1 = center + int(8 * math.sin(rad))
+    px1 = center + int(8 * SUPERSAMPLE * math.cos(rad))
+    py1 = center + int(8 * SUPERSAMPLE * math.sin(rad))
     px2 = center + int(pointer_radius * math.cos(rad))
     py2 = center + int(pointer_radius * math.sin(rad))
     
     # Pointer glow
-    for glow in range(6, 0, -2):
-        alpha = 40 - glow * 5
-        draw.line([(px1, py1), (px2, py2)], fill=(*cyan, alpha), width=glow + 2)
+    for glow in range(6 * SUPERSAMPLE, 0, -2 * SUPERSAMPLE):
+        alpha = max(10, 40 - glow * 3)
+        draw.line([(px1, py1), (px2, py2)], fill=(*cyan, alpha), width=glow + 2 * SUPERSAMPLE)
     
     # Pointer main line
-    draw.line([(px1, py1), (px2, py2)], fill=(*cyan, 255), width=2)
+    draw.line([(px1, py1), (px2, py2)], fill=(*cyan, 255), width=2 * SUPERSAMPLE)
     
     # Small center dot
-    dot_radius = 3
+    dot_radius = 3 * SUPERSAMPLE
     draw.ellipse(
         [center - dot_radius, center - dot_radius,
          center + dot_radius, center + dot_radius],
@@ -255,16 +269,18 @@ def create_cyberpunk_knob(size: int = 128, pointer_angle: float = -135) -> Image
     
     # Apply glow
     glow_layer = img.copy()
-    glow_layer = glow_layer.filter(ImageFilter.GaussianBlur(radius=3))
+    glow_layer = glow_layer.filter(ImageFilter.GaussianBlur(radius=3 * SUPERSAMPLE))
     
     result = Image.new("RGBA", (full_size, full_size), (0, 0, 0, 0))
     result = Image.alpha_composite(result, glow_layer)
     result = Image.alpha_composite(result, img)
     
-    # Crop to original size
-    crop_box = (glow_padding, glow_padding, glow_padding + size, glow_padding + size)
+    # Crop to render size (removing glow padding)
+    crop_box = (glow_padding, glow_padding, glow_padding + render_size, glow_padding + render_size)
     result = result.crop(crop_box)
     
+    # Downscale with high-quality resampling for anti-aliased edges
+    result = result.resize((size, size), Image.Resampling.LANCZOS)
     return result
 
 
@@ -279,12 +295,14 @@ def create_simple_knob(size: int = 128, pointer_angle: float = -135) -> Image.Im
     Returns:
         RGBA Image of the knob
     """
-    img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
+    # Render at higher resolution for anti-aliasing
+    render_size = size * SUPERSAMPLE
+    img = Image.new("RGBA", (render_size, render_size), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
     
-    center = size // 2
-    outer_radius = size // 2 - 4
-    pointer_radius = outer_radius - 12
+    center = render_size // 2
+    outer_radius = render_size // 2 - 4 * SUPERSAMPLE
+    pointer_radius = outer_radius - 12 * SUPERSAMPLE
     
     # Main circle
     draw.ellipse(
@@ -292,7 +310,7 @@ def create_simple_knob(size: int = 128, pointer_angle: float = -135) -> Image.Im
          center + outer_radius, center + outer_radius],
         fill=(60, 60, 65, 255),
         outline=(80, 80, 85, 255),
-        width=2
+        width=2 * SUPERSAMPLE
     )
     
     # Pointer
@@ -302,16 +320,18 @@ def create_simple_knob(size: int = 128, pointer_angle: float = -135) -> Image.Im
     px2 = center + int(pointer_radius * math.cos(rad))
     py2 = center + int(pointer_radius * math.sin(rad))
     
-    draw.line([(px1, py1), (px2, py2)], fill=(255, 255, 255, 255), width=3)
+    draw.line([(px1, py1), (px2, py2)], fill=(255, 255, 255, 255), width=3 * SUPERSAMPLE)
     
     # Center dot
-    dot_radius = 6
+    dot_radius = 6 * SUPERSAMPLE
     draw.ellipse(
         [center - dot_radius, center - dot_radius,
          center + dot_radius, center + dot_radius],
         fill=(40, 40, 45, 255)
     )
     
+    # Downscale with high-quality resampling for anti-aliased edges
+    img = img.resize((size, size), Image.Resampling.LANCZOS)
     return img
 
 
