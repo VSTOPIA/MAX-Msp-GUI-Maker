@@ -171,6 +171,7 @@ class KnobView(QGraphicsView):
         self._owner = owner
         self._set_center_mode = False  # When True, clicks set rotation center
         self.setDragMode(QGraphicsView.DragMode.RubberBandDrag)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)  # Enable keyboard focus
 
     def set_center_mode(self, enabled: bool) -> None:
         """Toggle between shape selection mode and set-center mode."""
@@ -188,6 +189,14 @@ class KnobView(QGraphicsView):
                 return
         
         super().mousePressEvent(event)
+
+    def keyPressEvent(self, event) -> None:
+        """Handle keyboard shortcuts."""
+        # Delete or Backspace to delete selected shapes
+        if event.key() in (Qt.Key.Key_Delete, Qt.Key.Key_Backspace):
+            self._owner.on_delete_shape()
+        else:
+            super().keyPressEvent(event)
 
 
 class KnobAnimationTab(QWidget):
