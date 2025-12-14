@@ -137,41 +137,43 @@ class ResizableRectItem(QGraphicsRectItem):
             # Check if Shift is held for proportional resize
             shift_held = event.modifiers() & Qt.KeyboardModifier.ShiftModifier
             
-            if shift_held and self._handle in ("top_left", "top_right", "bottom_left", "bottom_right"):
-                # Proportional resize from corner
+            if shift_held:
+                # Proportional resize from ANY handle (corner or edge)
                 orig_w = self._orig_rect.width()
                 orig_h = self._orig_rect.height()
                 if orig_w == 0 or orig_h == 0:
                     return
                 aspect = orig_w / orig_h
+                center = self._orig_rect.center()
                 
-                # Use the larger delta to determine scale
-                dx = abs(delta.x())
-                dy = abs(delta.y())
-                
-                if dx > dy:
-                    # Width-based scaling
-                    new_w = orig_w + delta.x() if "right" in self._handle else orig_w - delta.x()
+                # Determine scale based on handle type
+                if self._handle in ("left", "right"):
+                    # Horizontal edge - use X delta
+                    new_w = orig_w + delta.x() if self._handle == "right" else orig_w - delta.x()
                     new_h = new_w / aspect
-                else:
-                    # Height-based scaling
-                    new_h = orig_h + delta.y() if "bottom" in self._handle else orig_h - delta.y()
+                elif self._handle in ("top", "bottom"):
+                    # Vertical edge - use Y delta
+                    new_h = orig_h + delta.y() if self._handle == "bottom" else orig_h - delta.y()
                     new_w = new_h * aspect
+                else:
+                    # Corner - use larger delta
+                    dx = abs(delta.x())
+                    dy = abs(delta.y())
+                    if dx > dy:
+                        new_w = orig_w + delta.x() if "right" in self._handle else orig_w - delta.x()
+                        new_h = new_w / aspect
+                    else:
+                        new_h = orig_h + delta.y() if "bottom" in self._handle else orig_h - delta.y()
+                        new_w = new_h * aspect
                 
                 if new_w >= self.MIN_SIZE and new_h >= self.MIN_SIZE:
-                    # Apply based on which corner
-                    if self._handle == "bottom_right":
-                        r.setWidth(new_w)
-                        r.setHeight(new_h)
-                    elif self._handle == "bottom_left":
-                        r.setLeft(r.right() - new_w)
-                        r.setHeight(new_h)
-                    elif self._handle == "top_right":
-                        r.setWidth(new_w)
-                        r.setTop(r.bottom() - new_h)
-                    elif self._handle == "top_left":
-                        r.setLeft(r.right() - new_w)
-                        r.setTop(r.bottom() - new_h)
+                    # Resize from center for uniform scaling
+                    r = QRectF(
+                        center.x() - new_w / 2,
+                        center.y() - new_h / 2,
+                        new_w,
+                        new_h
+                    )
             else:
                 # Normal resize (non-proportional)
                 if "left" in self._handle:
@@ -282,41 +284,43 @@ class ResizableEllipseItem(QGraphicsEllipseItem):
             # Check if Shift is held for proportional resize
             shift_held = event.modifiers() & Qt.KeyboardModifier.ShiftModifier
             
-            if shift_held and self._handle in ("top_left", "top_right", "bottom_left", "bottom_right"):
-                # Proportional resize from corner
+            if shift_held:
+                # Proportional resize from ANY handle (corner or edge)
                 orig_w = self._orig_rect.width()
                 orig_h = self._orig_rect.height()
                 if orig_w == 0 or orig_h == 0:
                     return
                 aspect = orig_w / orig_h
+                center = self._orig_rect.center()
                 
-                # Use the larger delta to determine scale
-                dx = abs(delta.x())
-                dy = abs(delta.y())
-                
-                if dx > dy:
-                    # Width-based scaling
-                    new_w = orig_w + delta.x() if "right" in self._handle else orig_w - delta.x()
+                # Determine scale based on handle type
+                if self._handle in ("left", "right"):
+                    # Horizontal edge - use X delta
+                    new_w = orig_w + delta.x() if self._handle == "right" else orig_w - delta.x()
                     new_h = new_w / aspect
-                else:
-                    # Height-based scaling
-                    new_h = orig_h + delta.y() if "bottom" in self._handle else orig_h - delta.y()
+                elif self._handle in ("top", "bottom"):
+                    # Vertical edge - use Y delta
+                    new_h = orig_h + delta.y() if self._handle == "bottom" else orig_h - delta.y()
                     new_w = new_h * aspect
+                else:
+                    # Corner - use larger delta
+                    dx = abs(delta.x())
+                    dy = abs(delta.y())
+                    if dx > dy:
+                        new_w = orig_w + delta.x() if "right" in self._handle else orig_w - delta.x()
+                        new_h = new_w / aspect
+                    else:
+                        new_h = orig_h + delta.y() if "bottom" in self._handle else orig_h - delta.y()
+                        new_w = new_h * aspect
                 
                 if new_w >= self.MIN_SIZE and new_h >= self.MIN_SIZE:
-                    # Apply based on which corner
-                    if self._handle == "bottom_right":
-                        r.setWidth(new_w)
-                        r.setHeight(new_h)
-                    elif self._handle == "bottom_left":
-                        r.setLeft(r.right() - new_w)
-                        r.setHeight(new_h)
-                    elif self._handle == "top_right":
-                        r.setWidth(new_w)
-                        r.setTop(r.bottom() - new_h)
-                    elif self._handle == "top_left":
-                        r.setLeft(r.right() - new_w)
-                        r.setTop(r.bottom() - new_h)
+                    # Resize from center for uniform scaling
+                    r = QRectF(
+                        center.x() - new_w / 2,
+                        center.y() - new_h / 2,
+                        new_w,
+                        new_h
+                    )
             else:
                 # Normal resize (non-proportional)
                 if "left" in self._handle:
